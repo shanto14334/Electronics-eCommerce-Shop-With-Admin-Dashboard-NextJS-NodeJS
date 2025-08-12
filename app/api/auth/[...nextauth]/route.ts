@@ -1,4 +1,4 @@
-import NextAuth from "next-auth";
+import NextAuth, { NextAuthOptions } from "next-auth";
 import { Account, User as AuthUser } from "next-auth";
 import GithubProvider from "next-auth/providers/github";
 import CredentialsProvider from "next-auth/providers/credentials";
@@ -7,8 +7,7 @@ import bcrypt from "bcryptjs";
 import prisma from "@/utils/db";
 import { nanoid } from "nanoid";
 
-export const authOptions: any = {
-  // Configure one or more authentication providers
+export const authOptions: NextAuthOptions = {
   providers: [
     CredentialsProvider({
       id: "credentials",
@@ -17,28 +16,31 @@ export const authOptions: any = {
         email: { label: "Email", type: "text" },
         password: { label: "Password", type: "password" },
       },
-      async authorize(credentials: any) {
+      async authorize(credentials) {
+        if (!credentials?.email || !credentials?.password) return null;
 
         try {
           const user = await prisma.user.findFirst({
-            where: {
-              email: credentials.email,
-            },
+            where: { email: credentials.email },
           });
-          if (user) {
+
+          if (user && user.password) {
             const isPasswordCorrect = await bcrypt.compare(
               credentials.password,
-              user.password!
+              user.password
             );
             if (isPasswordCorrect) {
               return user;
             }
           }
-        } catch (err: any) {
-          throw new Error(err);
+          return null;
+        } catch (err) {
+          console.error(err);
+          return null;
         }
       },
-    })
+    }),
+    // যদি চাইলে অন্য প্রোভাইডার অ্যাড করো
     // GithubProvider({
     //   clientId: process.env.GITHUB_ID ?? "",
     //   clientSecret: process.env.GITHUB_SECRET ?? "",
@@ -47,57 +49,21 @@ export const authOptions: any = {
     //   clientId: process.env.GOOGLE_ID ?? "",
     //   clientSecret: process.env.GOOGLE_SECRET ?? "",
     // }),
-    // ...add more providers here if you want. You can find them on nextauth website.
   ],
   callbacks: {
     async signIn({ user, account }: { user: AuthUser; account: Account }) {
-      if (account?.provider == "credentials") {
+      if (account?.provider === "credentials") {
         return true;
       }
-      // if (account?.provider == "github") {
-
-      //   try {
-      //     const existingUser = await prisma.user.findFirst({ where: {email: user.email!} });
-      //     if (!existingUser) {
-
-      //       await prisma.user.create({
-      //           data: {
-      //             id: nanoid() + "",
-      //             email: user.email!
-      //           },
-      //         });
-      //       return true;
-      //     }
-      //     return true;
-      //   } catch (err) {
-      //     console.log("Error saving user", err);
-      //     return false;
-      //   }
-      // }
-
-      // if (account?.provider == "google") {
-
-      //   try {
-      //     const existingUser = await prisma.user.findFirst({where: { email: user.email! }});
-      //     if (!existingUser) {
-      //       await prisma.user.create({
-      //           data: {
-      //             id: nanoid() + "",
-      //             email: user.email!
-      //           },
-      //         });
-
-      //       return true;
-      //     }
-      //     return true;
-      //   } catch (err) {
-      //     console.log("Error saving user", err);
-      //     return false;
-      //   }
-      // }
+      return true;
     },
   },
+  session: {
+    strategy: "jwt",
+  },
+  secret: process.env.NEXTAUTH_SECRET,
 };
 
-export const handler = NextAuth(authOptions);
+// App Router-এর জন্য GET ও POST আলাদাভাবে এক্সপোর্ট করতে হবে
+const handler = NextAuth(authOptions);
 export { handler as GET, handler as POST };
